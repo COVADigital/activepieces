@@ -1,5 +1,6 @@
-import { Property, OAuth2PropertyValue } from '@activepieces/pieces-framework';
+import { Property, OAuth2PropertyValue, DynamicPropsValue } from '@activepieces/pieces-framework';
 import {
+  Authentication,
   httpClient,
   HttpMethod,
   AuthenticationType,
@@ -96,7 +97,30 @@ export const googleSheetsCommon = {
       };
     },
   }),
-  values: Property.DynamicProperties({
+  as_string: Property.Checkbox({
+    displayName: 'As String',
+    description: 'Inserted values that are dates and formulas will be entered as strings and have no effect',
+    required: false,
+  }),
+  first_row_headers: Property.Checkbox({
+    displayName: 'Does the first row contain headers?',
+    description: 'If the first row is headers',
+    required: true,
+    defaultValue: false,
+  }),
+  headersAsKeys: Property.Checkbox({
+    displayName: 'Use headers as keys?',
+    description: 'Use headers as keys in the result (instead of A, B, C...)',
+    required: true,
+    defaultValue: false,
+  }),
+  headersAsKeysForInsert: Property.Checkbox({
+    displayName: 'Use headers as keys?',
+    description: 'The provided dynamic values are using headers as object keys (instead of A, B, C...)',
+    required: false,
+    defaultValue: false,
+  }),
+  valuesForOneRow: Property.DynamicProperties({
     displayName: 'Values',
     description: 'The values to insert',
     required: true,
@@ -138,6 +162,53 @@ export const googleSheetsCommon = {
         });
       }
       return properties;
+    },
+  }),
+  valuesForMultipleRows: Property.DynamicProperties({
+    displayName: 'Values',
+    description: 'The values to insert.',
+    required: true,
+    refreshers: ['sheet_id', 'spreadsheet_id'],
+    props: async ({ auth, sheet_id, spreadsheet_id }) => {
+      if (
+        !auth ||
+        (spreadsheet_id ?? '').toString().length === 0 ||
+        (sheet_id ?? '').toString().length === 0
+      ) {
+        return {};
+      }
+
+      const fields: DynamicPropsValue = {};
+
+      const sheetId = Number(sheet_id)
+
+      const authentication = auth as OAuth2PropertyValue;
+      const values = await googleSheetsCommon.getValues(
+        spreadsheet_id as unknown as string,
+        getAccessTokenOrThrow(authentication),
+        sheetId,
+      );
+
+      const firstRow = values?.[0]?.values ?? [];
+      const columns: {
+        [key: string]: any;
+      } = {};
+      for (const key in firstRow) {
+        columns[key] = Property.ShortText({
+          displayName: firstRow[key].toString(),
+          description: firstRow[key].toString(),
+          required: false,
+          defaultValue: '',
+        });
+      }
+
+      fields['values'] = Property.Array({
+        displayName: 'Values',
+        required: false,
+        properties: columns,
+      });
+
+      return fields;
     },
   }),
   columnName: Property.Dropdown<string>({
@@ -271,31 +342,59 @@ export async function findSheetName(
   return sheetName;
 }
 
+export async function getHeaders(params: {
+  accessToken: string;
+  sheetName: string;
+  spreadSheetId: string;
+}) {
+  const request: HttpRequest = {
+    method: HttpMethod.GET,
+    url: `${googleSheetsCommon.baseUrl}/${params.spreadSheetId}/values/${params.sheetName}!A1:ZZZ1`,
+    authentication: {
+      type: AuthenticationType.BEARER_TOKEN,
+      token: params.accessToken,
+    },
+  };
+
+  const response = await httpClient.sendRequest<{ values: string[][] }>(request);
+
+  return response.body.values[0];
+}
+
 export async function getGoogleSheetRows(params: {
   accessToken: string;
   sheetName: string;
   spreadSheetId: string;
   rowIndex_s: number;
   rowIndex_e: number;
+  headersAsKeys?: boolean;
 }) {
+  const sheetUrl = `${googleSheetsCommon.baseUrl}/${params.spreadSheetId}/values/${params.sheetName}`;
+  const authentication: Authentication = {
+    type: AuthenticationType.BEARER_TOKEN,
+    token: params.accessToken,
+  };
   const request: HttpRequest = {
     method: HttpMethod.GET,
-    url: `${googleSheetsCommon.baseUrl}/${params.spreadSheetId}/values/${params.sheetName}!A${params.rowIndex_s}:ZZZ${params.rowIndex_e}`,
-    authentication: {
-      type: AuthenticationType.BEARER_TOKEN,
-      token: params.accessToken,
-    },
+    url: `${sheetUrl}!A${params.rowIndex_s}:ZZZ${params.rowIndex_e}`,
+    authentication,
   };
   const response = await httpClient.sendRequest<{ values: [string[]][] }>(
     request
   );
   if (response.body.values === undefined) return [];
 
+  const headers = params.headersAsKeys ? await getHeaders(params) : [];
+
   const res = [];
   for (let i = 0; i < response.body.values.length; i++) {
     const values: any = {};
     for (let j = 0; j < response.body.values[i].length; j++) {
-      values[columnToLabel(j)] = response.body.values[i][j];
+      const key = params.headersAsKeys ? headers[j] : columnToLabel(j);
+      if (Object.prototype.hasOwnProperty.call(values, key)) {
+        throw new Error(`Duplicate column name "${key}"`);
+      }
+      values[key] = response.body.values[i][j];
     }
 
     res.push({
@@ -466,6 +565,19 @@ export function objectToArray(obj: { [x: string]: any }) {
   for (const key in obj) {
     arr[labelToColumn(key)] = obj[key];
   }
+  return arr;
+}
+
+export async function objectWithHeadersAsKeysToArray(
+  headers: string[],
+  values: { [x: string]: any },
+): Promise<string[]> {
+  const arr = new Array(Object.keys(values).length);
+  for (const key in values) {
+    const columnIndex = headers.findIndex(v => v == key)
+    if (columnIndex !== -1) arr[columnIndex] = values[key];
+  }
+
   return arr;
 }
 
