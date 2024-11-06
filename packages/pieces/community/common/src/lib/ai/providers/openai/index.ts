@@ -1,9 +1,10 @@
 import { AI, AIChatRole, AIFactory } from '../..';
 import { isNil } from '@activepieces/shared';
-import OpenAI from 'openai';
+import OpenAI, { toFile } from 'openai';
 import { imageMapper, model, ModelType } from '../utils';
-import { ApFile, Property } from '@activepieces/pieces-framework';
+import { Property } from '@activepieces/pieces-framework';
 import { ModerationMultiModalInput } from 'openai/resources';
+import { Readable } from 'stream';
 
 export const openai: AIFactory = ({ proxyUrl, engineToken }): AI => {
   const openaiApiVersion = 'v1';
@@ -191,6 +192,46 @@ export const openai: AIFactory = ({ proxyUrl, engineToken }): AI => {
         return response.results[0];
       },
     },
+    voice: {
+      createSpeech: async (params) => {
+        const response = await sdk.audio.speech.create({
+          model: params.model,
+          input: params.input,
+          voice: params.voice as
+            | 'alloy'
+            | 'echo'
+            | 'fable'
+            | 'onyx'
+            | 'nova'
+            | 'shimmer',
+          speed: params.speed,
+          response_format: params.response_format as
+            | 'mp3'
+            | 'opus'
+            | 'aac'
+            | 'flac'
+            | 'wav'
+            | 'pcm',
+        });
+        const readableStream =
+          response.body as unknown as NodeJS.ReadableStream;
+        const buffer = await streamToBuffer(readableStream);
+        return { data: buffer };
+      },
+      createTranscription: async (params) => {
+        const audioFile = await toFile(
+          Readable.from(params.audio.data),
+          params.audio.filename
+        );
+        const response = await sdk.audio.transcriptions.create({
+          model: params.model,
+          language: params.language,
+          file: audioFile,
+        });
+
+        return { text: response.text };
+      },
+    },
   };
 };
 
@@ -204,6 +245,15 @@ const findImageMapper = (model: string) => {
     throw new Error(`OpenAI image model ${model} not found`);
   }
   return mapper;
+};
+
+const streamToBuffer = (stream: any) => {
+  const chunks: any[] = [];
+  return new Promise((resolve, reject) => {
+    stream.on('data', (chunk: any) => chunks.push(Buffer.from(chunk)));
+    stream.on('error', (err: any) => reject(err));
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
+  });
 };
 
 const openaiImageMapper = imageMapper({
@@ -267,5 +317,12 @@ export const openaiModels = [
     label: 'omni-moderation-latest',
     value: 'omni-moderation-latest',
     supported: ['moderation'],
+  }),
+  model({ label: 'tts-1', value: 'tts-1', supported: ['speech'] }),
+  model({ label: 'tts-1-hd', value: 'tts-1-hd', supported: ['speech'] }),
+  model({
+    label: 'whisper-1',
+    value: 'whisper-1',
+    supported: ['transcription'],
   }),
 ];

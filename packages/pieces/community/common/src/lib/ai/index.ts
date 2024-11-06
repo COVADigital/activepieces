@@ -6,6 +6,7 @@ export type AI = {
   chat: AIChat;
   image?: AIImage;
   moderation?: AIModeration;
+  voice?: AIVoice;
 };
 
 export type AIModeration = {
@@ -48,6 +49,31 @@ export type AIChat = {
       functions: AIFunctionDefinition[];
     }
   ) => Promise<AIChatCompletion & { call: AIFunctionCall | null }>;
+};
+
+export type AIVoice = {
+  createSpeech: (params: AISpeechCreateParams) => Promise<any>;
+  createTranscription: (
+    params: AITranscriptionCreateParams
+  ) => Promise<AITranscriptionCreateResponse>;
+};
+
+export type AISpeechCreateParams = {
+  model: string;
+  input: string;
+  voice: string;
+  speed?: number;
+  response_format?: string;
+};
+
+export type AITranscriptionCreateParams = {
+  audio: ApFile;
+  language: string;
+  model: string;
+};
+
+export type AITranscriptionCreateResponse = {
+  text: string;
 };
 
 export type AIChatCompletionsCreateParams = {
@@ -127,6 +153,7 @@ export const AI = ({
     provider,
     image: impl.image,
     moderation: impl.moderation,
+    voice: impl.voice,
     chat: {
       text: async (params) => {
         try {
