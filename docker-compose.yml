@@ -13,9 +13,6 @@ services:
     networks:
       - activepieces
       - dokploy-network
-    volumes:
-      - ./your-ssl-certificate:/etc/ssl/certs
-      - ./your-ssl-key:/etc/ssl/private
 
   postgres:
     image: 'postgres:14.4'
