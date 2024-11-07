@@ -4,16 +4,20 @@ services:
     image: ghcr.io/activepieces/activepieces:0.34.11
     container_name: activepieces
     restart: unless-stopped
-    ## Enable the following line if you already use AP_EXECUTION_MODE with SANDBOXED or old activepieces, checking the breaking change documentation for more info.
-    ## privileged: true
     ports:
-      - '8080:80'
+      - '443:80'  # Maps host port 443 to container port 80 for HTTPS
+    environment:
+      # DATABASE_URL constructed using env variables
+      - DATABASE_URL=postgres://${AP_POSTGRES_USERNAME}:${AP_POSTGRES_PASSWORD}@postgres:5432/${AP_POSTGRES_DATABASE}
     depends_on:
       - postgres
       - redis
-    env_file: .env
     networks:
       - activepieces
+    volumes:
+      - ./your-ssl-certificate:/etc/ssl/certs  # Mount your SSL certificate
+      - ./your-ssl-key:/etc/ssl/private  # Mount your SSL private key
+
   postgres:
     image: 'postgres:14.4'
     container_name: postgres
@@ -26,6 +30,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - activepieces
+
   redis:
     image: 'redis:7.0.7'
     container_name: redis
@@ -34,8 +39,10 @@ services:
       - 'redis_data:/data'
     networks:
       - activepieces
+
 volumes:
   postgres_data:
   redis_data:
+
 networks:
   activepieces:
