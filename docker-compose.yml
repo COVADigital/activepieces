@@ -1,3 +1,4 @@
+version: '3.0'
 services:
   activepieces:
     image: ghcr.io/activepieces/activepieces:0.34.11
