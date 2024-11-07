@@ -1,23 +1,21 @@
-version: '3.0'
-
 services:
   activepieces:
     image: ghcr.io/activepieces/activepieces:0.34.11
     container_name: activepieces
     restart: unless-stopped
     ports:
-      - '443:4022'  # Maps host port 443 to container port 4022 for HTTPS
+      - '443:4022'  # Maps host port 443 (HTTPS) to container port 4022
     environment:
-      # DATABASE_URL constructed using env variables
       - DATABASE_URL=postgres://${AP_POSTGRES_USERNAME}:${AP_POSTGRES_PASSWORD}@postgres:5432/${AP_POSTGRES_DATABASE}
     depends_on:
       - postgres
       - redis
     networks:
       - activepieces
+      - dokploy-network
     volumes:
-      - ./your-ssl-certificate:/etc/ssl/certs  # Mount your SSL certificate
-      - ./your-ssl-key:/etc/ssl/private  # Mount your SSL private key
+      - ./your-ssl-certificate:/etc/ssl/certs
+      - ./your-ssl-key:/etc/ssl/private
 
   postgres:
     image: 'postgres:14.4'
@@ -25,12 +23,13 @@ services:
     restart: unless-stopped
     environment:
       - 'POSTGRES_DB=${AP_POSTGRES_DATABASE}'
+      - 'POSTGRES_PASSWORD=${AP_POSTGRES_PASSWORD}'
       - 'POSTGRES_USER=${AP_POSTGRES_USERNAME}'
-      - 'POSTGRES_PASSWORD=${AP_POSTGRES_PASSWORD}'  # Ensure this is the correct environment variable
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - activepieces
+      - dokploy-network  # Adding external network here
 
   redis:
     image: 'redis:7.0.7'
@@ -40,6 +39,7 @@ services:
       - 'redis_data:/data'
     networks:
       - activepieces
+      - dokploy-network  # Adding external network here
 
 volumes:
   postgres_data:
@@ -47,3 +47,5 @@ volumes:
 
 networks:
   activepieces:
+  dokploy-network:
+    external: true  # Declaring external network
